@@ -8,7 +8,7 @@ import functools
 import inspect
 import json
 from logging import getLogger
-from typing import Any, Callable, Dict, ForwardRef, List, Optional, Set, Tuple, Type, TypeVar, Union
+from typing import Any, Callable, Dict, ForwardRef, List, Optional, Set, Tuple, Type, TypeVar, Union, cast
 
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal, get_args, get_origin
@@ -212,6 +212,81 @@ def get_missing_annotations(typed_signature: inspect.Signature, required: List[s
     missing = all_missing.intersection(set(required))
     unannotated_with_default = all_missing.difference(missing)
     return missing, unannotated_with_default
+
+
+def remove_parameter_from_function_schema(function_schema: Dict[str, Any], parameter_name: str) -> Dict[str, Any]:
+    """
+    Removes a parameter from a function schema by updating both the properties
+    and required fields.
+
+    Args:
+        function_schema (Dict[str, Any]): The function schema to modify
+        parameter_name (str): The name of the parameter to remove
+
+    Returns:
+        Dict[str, Any]: Updated function schema with the parameter removed
+
+    Raises:
+        ValueError: If the schema structure is invalid or parameter_name not found
+    """
+    # Convert string to dict if needed
+    schema_dict: Dict[str, Any]
+    if isinstance(function_schema, str):
+        try:
+            schema_dict = cast(Dict[str, Any], json.loads(function_schema.replace("'", '"')))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid function schema string: {e}")
+    else:
+        schema_dict = function_schema
+
+    # Validate schema structure
+    if not isinstance(schema_dict, dict):
+        raise ValueError("Function schema must be a dictionary or valid JSON string")
+
+    if "type" not in schema_dict or schema_dict["type"] != "function":
+        raise ValueError("Schema must have 'type': 'function'")
+
+    if "function" not in schema_dict:
+        raise ValueError("Schema must have a 'function' key")
+
+    function_def = schema_dict["function"]
+    if not isinstance(function_def, dict):
+        raise ValueError("Function definition must be a dictionary")
+
+    if "parameters" not in function_def:
+        raise ValueError("Schema must have 'parameters' in function definition")
+
+    parameters = function_def["parameters"]
+    if not isinstance(parameters, dict):
+        raise ValueError("Parameters must be a dictionary")
+
+    if "properties" not in parameters:
+        raise ValueError("Schema must have 'properties' in parameters")
+
+    # Create a deep copy to avoid modifying the original
+    updated_schema: Dict[str, Any] = cast(Dict[str, Any], json.loads(json.dumps(schema_dict)))
+
+    # Remove from properties if it exists
+    properties = updated_schema["function"]["parameters"]["properties"]
+    if not isinstance(properties, dict):
+        raise ValueError("Properties must be a dictionary")
+
+    if parameter_name in properties:
+        del properties[parameter_name]
+
+    # Remove from required if it exists
+    if "required" in updated_schema["function"]["parameters"]:
+        required = updated_schema["function"]["parameters"]["required"]
+        if not isinstance(required, list):
+            raise ValueError("Required must be a list")
+
+        updated_schema["function"]["parameters"]["required"] = [param for param in required if param != parameter_name]
+
+        # If required list is empty, remove it
+        if not updated_schema["function"]["parameters"]["required"]:
+            del updated_schema["function"]["parameters"]["required"]
+
+    return updated_schema
 
 
 def get_function_schema(f: Callable[..., Any], *, name: Optional[str] = None, description: str) -> Dict[str, Any]:
