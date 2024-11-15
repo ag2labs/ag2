@@ -1,0 +1,73 @@
+# Details of all the available configurations
+Captain Agent requires `nested_mode_config` for configuration. Below is an example, we will break it down and provide a detailed explanation.
+
+```
+nested_mode_config = {
+    "autobuild_init_config": {
+        "config_file_or_env": "OAI_CONFIG_LIST",
+        "builder_model": "gpt-4-1106-preview",
+        "agent_model": "gpt-4-1106-preview",
+    },
+    # this is used to configure the autobuild building process
+    "autobuild_build_config": {
+        "default_llm_config": {"temperature": 1, "top_p": 0.95, "max_tokens": 1500, "seed": 52},
+        # this is used to configure the user proxy within nested chat
+        "code_execution_config": {"timeout": 300, "work_dir": "groupchat", "last_n_messages": 1},
+        "coding": True,
+        "library_path_or_json": "captainagent_expert_library.json",
+    },
+    # this is used to configure the tool library
+    "autobuild_tool_config": {
+        "tool_root": "default",  # this will use the tool library we provide
+        "retriever": "all-mpnet-base-v2",
+    },
+    # this is used to configure the group chat
+    "group_chat_config": {"max_round": 15},
+    "group_chat_llm_config": general_llm_config.copy(),
+}
+```
+
+## ``autobuild_init_config``
+This section is used to configure the initial setup of autobuild.
+
+### ``config_file_or_env``
+Configures the path to OAI config
+
+### ``builder_model``
+Configures the backbone of agent builder. builder is used for agent selection from library.
+
+### ``agent_model``
+Configures the backbone of agents in the group chat.
+
+## autobuild_build_config
+This section is used to configure the building process of autobuild.
+
+### ``default_llm_config``
+Configures the default parameters for the builder during the autobuild process.
+
+### ``code_execution_config``
+Configures the user proxy within the nested chat, its value is similar to user proxy.
+
+### ``coding``
+Enables or disables whether to add user proxy in the nested chat.
+
+### ``library_path_or_json``
+Specifies the path to the agent library file. For details on customizing your own agent library, refer to the [agent_library page](/docs/topics/captainagent/agent_library).
+
+## autobuild_tool_config
+This section is used to configure retrieving tool library for autobuild. For details on customizing your own tool library, refer to the [tool_library page](/docs/topics/captainagent/tool_library).
+
+### ``tool_root``
+Specifies the root directory of the tool library. When setting to 'default', it will load the default library we provide.
+
+### ``retriever``
+Configures the retriever model used for fetching relevant tools from the library.
+
+## ``group_chat_config``
+This section is used to configure the group chat settings.
+
+### ``max_round``
+Specifies the maximum number of rounds in a group chat session.
+
+## ``group_chat_llm_config``
+Specifies the LLM config of the agents in the group chat.

@@ -1,0 +1,145 @@
+---
+title: "Introducing Adaptive Team Building Agent (Captain Agent) in AutoGen"
+authors:
+  - LinxinS97
+  - jialeliu
+  - jieyuz2
+tags: [LLM, GPT, AutoBuild]
+---
+![Illustration of how Captain Agent build a team](img/overall.png)
+
+**TL;DR**
+- We introduce Captain Agent, an agent equipped with the capability to adaptively assemble a team of agents through retrieval-selection-generation process to handle complex tasks via nested chat.
+- Captain Agent supports all types of `ConversableAgents` implemented in Autogen.
+
+
+# Introduction
+
+In this blog, we introduce **Captain Agent**, an agent that can automatically build a team of agents to fulfill diverse, complex task requirements.
+We design a two-step workflow for Captain Agent to build a high quality team and solve the problem:
+- (**Step 1**) Captain Agent will first identify a subtask instructed by our prompt, list several roles needed for this subtask, and then create a team of agents accordingly by retrieval, selection, and generation. Each of these will be equipped with predefined tools retrieved from the tool library.
+![Building workflow](img/build.png)
+- (**Step 2**) this team of agents will attempt to solve the subtask via conversation with the free-form tool using. Once it's done, a reflector LLM will provide Captain Agent with a reflection report for it to decide whether to adjust the team or subtask instruction or to terminate and output the results.
+![Building workflow](img/chat.png)
+
+We provide an agent library and a tool library for Captain Agent to choose from when building the team. In the following section, we demonstrate how to use the libraries.
+
+# Using Agent Library
+To use captain agent, we need to instantiate a CaptainAgent and the corresponding CaptainUserProxy, then initiate a chat. To  we just need to add a line of configuration to the settings.
+
+```python
+from autogen.agentchat.contrib.captain_agent import CaptainAgent
+from autogen.agentchat.contrib.captain_user_proxy_agent import CaptainUserProxyAgent
+
+general_llm_config = {
+    "temperature": 0,
+    "config_list": autogen.config_list_from_json("OAI_CONFIG_LIST", filter_dict={"model": ["gpt-4-1106-preview"]}),
+}
+
+nested_mode_config = {
+    "autobuild_init_config": {
+        "config_file_or_env": "OAI_CONFIG_LIST",
+        "builder_model": "gpt-4-1106-preview",
+        "agent_model": "gpt-4-1106-preview",
+    },
+    # this is used to configure the autobuild building process
+    "autobuild_build_config": {
+        "default_llm_config": {"temperature": 1, "top_p": 0.95, "max_tokens": 1500, "seed": 52},
+        # this is used to configure the user proxy within nested chat
+        "code_execution_config": {"timeout": 300, "work_dir": "groupchat", "last_n_messages": 1},
+        "coding": True,
+        # modify this line to change the agent library path
+        "library_path_or_json": "notebook/captainagent_expert_library.json",
+    },
+    "group_chat_config": {"max_round": 15},
+    "group_chat_llm_config": general_llm_config.copy(),
+}
+
+## build agents
+captain_agent = CaptainAgent(name="captain_agent", llm_config=general_llm_config, nested_mode="autobuild")
+captain_user_proxy = CaptainUserProxyAgent(
+    name="captain_user_proxy",
+    nested_mode_config=nested_mode_config,
+    code_execution_config={"use_docker": False},
+    agent_config_save_path=None,  # If you'd like to save the created agents in nested chat for further use, specify the path here
+)
+
+query = 'Find the stock price of Microsoft in the past 1 year and plot a line chart to show the trend. Save the line chart as "microsoft_stock_price.png".'
+
+result = captain_user_proxy.initiate_chat(captain_agent, message=query, max_turns=3)
+```
+
+# Using Agent Library and Tool Library
+We provide a built-in tool library. To fully use the tools in it, refer to the instructions in the [docs](/docs/topics/captainagent/tool). Running the following instructions requires
+
+```python
+from autogen.agentchat.contrib.captain_agent import CaptainAgent
+from autogen.agentchat.contrib.captain_user_proxy_agent import CaptainUserProxyAgent
+
+nested_mode_config = {
+    "autobuild_init_config": {
+        "config_file_or_env": "OAI_CONFIG_LIST",
+        "builder_model": "gpt-4-1106-preview",
+        "agent_model": "gpt-4-1106-preview",
+    },
+    # this is used to configure the autobuild building process
+    "autobuild_build_config": {
+        "default_llm_config": {"temperature": 1, "top_p": 0.95, "max_tokens": 1500, "seed": 52},
+        # this is used to configure the user proxy within nested chat
+        "code_execution_config": {"timeout": 300, "work_dir": "groupchat", "last_n_messages": 1},
+        "coding": True,
+        "library_path_or_json": "notebook/captainagent_expert_library.json",
+    },
+    # this is used to configure the tool library
+    "autobuild_tool_config": {
+        "tool_root": "default",  # this will use the tool library we provide
+        "retriever": "all-mpnet-base-v2",
+    },
+    # this is used to configure the group chat
+    "group_chat_config": {"max_round": 15},
+    "group_chat_llm_config": general_llm_config.copy(),
+}
+
+# The function requires BING api key and Rapid API key to work. You can follow the instructions from docs to get one.
+import os
+
+os.environ["BING_API_key"] = "" # set your bing api key here, if you do not need search engine, you can skip this step
+os.environ["RAPID_API_KEY"] = "" # set your rapid api key here, in order for this example to work, you need to subscribe to the youtube transcription api (https://rapidapi.com/solid-api-solid-api-default/api/youtube-transcript3)
+
+## build agents
+captain_agent = CaptainAgent(name="captain_agent", llm_config=general_llm_config, nested_mode="autobuild")
+captain_user_proxy = CaptainUserProxyAgent(
+    name="captain_user_proxy",
+    nested_mode_config=nested_mode_config,
+    code_execution_config={"use_docker": False},
+    agent_config_save_path=None,  # If you'd like to save the created agents in nested chat for further use, specify the path here
+)
+
+query = """# Task
+Your task is to solve a question given by a user.
+
+# Question
+Examine the video at https://www.youtube.com/watch?v=1htKBjuUWec.
+
+What does Teal'c say in response to the question "Isn't that hot?"
+""".strip()
+result = captain_user_proxy.initiate_chat(captain_agent, message=query)
+```
+
+# Further Reading
+For a detailed description of how to customize your own agent library and tool library, as well as how to configure the Captain Agent, please refer to the [document](/docs/topics/captainagent).
+
+Please refer to our [paper](https://arxiv.org/pdf/2405.19425) for more details about Captain Agent and the proposed new team-building paradigm: adaptive build.
+
+If you find this blog useful, please consider citing:
+```
+@misc{song2024adaptiveinconversationteambuilding,
+      title={Adaptive In-conversation Team Building for Language Model Agents},
+      author={Linxin Song and Jiale Liu and Jieyu Zhang and Shaokun Zhang and Ao Luo and Shijian Wang and Qingyun Wu and Chi Wang},
+      year={2024},
+      eprint={2405.19425},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2405.19425},
+}
+```
